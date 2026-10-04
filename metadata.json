@@ -1,0 +1,6 @@
+{
+  "name": "VietTraffic AI - Tư Vấn Luật Giao Thông & Tracking Phân Tích Lỗi",
+  "description": "Hệ thống AI thông minh hỗ trợ tra cứu, tư vấn luật giao thông đường bộ Việt Nam và phân tích video tracking phương tiện, phát hiện vi phạm và tra cứu mức phạt theo quy định.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
