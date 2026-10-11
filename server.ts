@@ -12,6 +12,8 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL?.replace(/\/$/, '');
+const ALLOW_SIMULATION = process.env.ALLOW_SIMULATION === 'true';
 
 // Enable large JSON payload for base64 video frames
 app.use(express.json({ limit: '60mb' }));
@@ -29,8 +31,13 @@ const ai = new GoogleGenAI({
 
 // System prompt for Traffic Law Consultation
 const SYSTEM_TRAFFIC_LEGAL = `
-Bạn là Trợ lý AI Chuyên gia Pháp luật Giao thông Đường bộ Việt Nam cao cấp (VietTraffic Legal AI).
-Nhiệm vụ của bạn là tư vấn chính xác, tận tâm và dẫn chứng đầy đủ căn cứ pháp luật cho người tham gia giao thông:
+Bạn là chatbot VietTraffic AI, giao tiếp tự nhiên bằng tiếng Việt.
+Hãy trả lời đúng ý định của từng tin nhắn, không áp dụng một khuôn trả lời cố định cho mọi câu hỏi.
+- Nếu người dùng chào hỏi hoặc hỏi chuyện chung, hãy đáp lại tự nhiên, ngắn gọn và giới thiệu bạn có thể hỗ trợ tra cứu pháp luật giao thông.
+- Nếu người dùng hỏi pháp luật, hãy tư vấn như một chuyên gia pháp luật giao thông Việt Nam: tra cứu, đối chiếu và giải thích theo câu hỏi cụ thể.
+- Không được bịa nguồn, điều khoản, mức phạt hoặc khẳng định đã tra cứu nếu kết quả tìm kiếm không có thông tin đó.
+- Nếu câu hỏi chưa đủ dữ kiện, hãy hỏi lại tối đa các thông tin cần thiết thay vì tự suy đoán.
+Nhiệm vụ khi câu hỏi thuộc lĩnh vực pháp luật:
 1. Các văn bản pháp luật nền tảng:
    - Luật Trật tự, an toàn giao thông đường bộ (Luật số 36/2024/QH15) và Luật Giao thông đường bộ 2008.
    - Nghị định 100/2019/NĐ-CP và Nghị định 123/2021/NĐ-CP (sửa đổi, bổ sung quy định xử phạt vi phạm hành chính trong lĩnh vực giao thông đường bộ, đường sắt).
@@ -63,10 +70,16 @@ app.post('/api/traffic-legal-consultation', async (req: Request, res: Response) 
       return res.status(400).json({ error: 'Query parameter is required' });
     }
 
-    let searchDirective = '';
-    if (searchMoit) {
-      searchDirective = ` Hãy kiểm tra và đối chiếu cả thông tin từ Cổng thông tin điện tử Bộ Công Thương (moit.gov.vn) và các cổng thông tin bộ ngành chính phủ liên quan.`;
-    }
+    const searchDirective = searchMoit
+      ? `
+Ưu tiên tra cứu nguồn chính thức bằng các truy vấn có phạm vi:
+- site:moit.gov.vn
+- site:luatvietnam.vn hoặc site:thuvienphapluat.vn chỉ dùng để đối chiếu khi nguồn chính thức không đủ.
+Đối với quy định xử phạt giao thông, phải đối chiếu thêm nguồn cơ quan nhà nước phù hợp như csgt.vn, bocongan.gov.vn, chinhphu.vn hoặc vanban.chinhphu.vn. Không được coi moit.gov.vn là nguồn duy nhất nếu nội dung không thuộc thẩm quyền Bộ Công Thương.
+`
+      : `
+Tra cứu nguồn pháp luật chính thức và ưu tiên văn bản đang còn hiệu lực. Nếu câu hỏi liên quan hàng hóa, thương mại hoặc quản lý thị trường, ưu tiên site:moit.gov.vn.
+`;
 
     const promptText = `
 Người dùng hỏi về luật giao thông đường bộ Việt Nam:
@@ -75,7 +88,7 @@ Người dùng hỏi về luật giao thông đường bộ Việt Nam:
 Danh mục chủ đề: ${category || 'Tra cứu chung'}
 ${searchDirective}
 
-Hãy phân tích và đưa ra câu trả lời chi tiết, chuẩn xác theo pháp luật Việt Nam hiện hành. Hãy cấu trúc câu trả lời gồm:
+Hãy tự phân tích câu hỏi và đưa ra câu trả lời đúng trọng tâm, không chọn câu trả lời dựng sẵn theo từ khóa. Chỉ kết luận những gì có căn cứ từ kết quả tra cứu hoặc văn bản pháp luật đã biết rõ; nếu thiếu dữ kiện, hãy nói rõ cần bổ sung thông tin gì. Hãy cấu trúc câu trả lời gồm:
 1. **Kết luận nhanh**: Vi phạm hay không vi phạm, mức phạt tóm lược.
 2. **Căn cứ pháp lý chi tiết**: Trích dẫn cụ thể Điều, Khoản, Điểm văn bản luật (Nghị định 100/2019/NĐ-CP, Nghị định 123/2021/NĐ-CP hoặc Luật Trật tự an toàn giao thông đường bộ).
 3. **Mức phạt chi tiết theo loại phương tiện**:
@@ -88,16 +101,18 @@ Hãy phân tích và đưa ra câu trả lời chi tiết, chuẩn xác theo ph�
 `;
 
     let answer = '';
-    let webSources: any[] = [
-      { title: 'Cổng thông tin điện tử Bộ Công Thương', uri: 'https://moit.gov.vn/' },
-      { title: 'Cổng thông tin Cục Cảnh sát giao thông', uri: 'https://csgt.vn/' },
-      { title: 'Cổng Dịch vụ công Quốc gia', uri: 'https://dichvucong.gov.vn/' },
-    ];
+    let webSources: any[] = [];
 
     try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(503).json({
+          error: 'GEMINI_API_KEY chưa được cấu hình; chatbot không thể tra cứu và tổng hợp câu trả lời.',
+        });
+      }
+
       const response = await withTimeout(
         ai.models.generateContent({
-          model: 'gemini-3.8-flash',
+          model: 'gemini-2.5-flash',
           contents: promptText,
           config: {
             systemInstruction: SYSTEM_TRAFFIC_LEGAL,
@@ -117,11 +132,16 @@ Hãy phân tích và đưa ra câu trả lời chi tiết, chuẩn xác theo ph�
           uri: chunk.web?.uri,
         }));
       if (extractedSources.length > 0) {
-        webSources = extractedSources;
+        webSources = Array.from(
+          new Map(extractedSources.map((source: any) => [source.uri, source])).values()
+        );
       }
     } catch (geminiError: any) {
-      console.warn('Gemini API call returned error, applying intelligent legal engine fallback:', geminiError?.message);
-      answer = synthesizeLegalAdvice(query, searchMoit);
+      console.error('Gemini legal consultation failed:', geminiError?.message);
+      return res.status(502).json({
+        error: 'Gemini không thể tra cứu hoặc tổng hợp câu trả lời lúc này. Vui lòng thử lại sau.',
+        detail: geminiError?.message,
+      });
     }
 
     return res.json({
@@ -262,6 +282,38 @@ app.post('/api/roboflow/detect', async (req: Request, res: Response) => {
 
     const startTime = Date.now();
 
+    if (AI_SERVICE_URL) {
+      try {
+        const aiResponse = await fetch(`${AI_SERVICE_URL}/predict/image`, {
+          method: 'POST',
+          body: (() => {
+            const form = new FormData();
+            form.append('file', new Blob([Buffer.from(cleanBase64, 'base64')], { type: 'image/jpeg' }), 'frame.jpg');
+            return form;
+          })(),
+        });
+
+        const aiData = await aiResponse.json();
+        if (!aiResponse.ok) {
+          return res.status(aiResponse.status).json({
+            error: aiData.detail || 'Local Python AI service rejected the image',
+            engine: 'python_yolo_local',
+          });
+        }
+        return res.json({
+          ...aiData,
+          time: Date.now() - startTime,
+        });
+      } catch (aiError: any) {
+        console.error('Local Python AI service unavailable:', aiError?.message);
+        return res.status(503).json({
+          error: 'Local Python AI service is unavailable',
+          detail: aiError?.message,
+          engine: 'python_yolo_local',
+        });
+      }
+    }
+
     // If API Key is present, call Roboflow Hosted Inference API
     if (key) {
       try {
@@ -293,7 +345,14 @@ app.post('/api/roboflow/detect', async (req: Request, res: Response) => {
       }
     }
 
-    // Embedded YOLOv8 Engine for Vietnam Traffic Detection
+    if (!ALLOW_SIMULATION) {
+      return res.status(503).json({
+        error: 'No real detection engine is configured. Set AI_SERVICE_URL or ALLOW_SIMULATION=true.',
+        engine: 'none',
+      });
+    }
+
+    // Embedded simulation for demo scenarios only.
     const latencyMs = Math.floor(28 + Math.random() * 15);
     const predictions = generateYOLOv8TrafficPredictions(scenarioKeyframe, model);
 

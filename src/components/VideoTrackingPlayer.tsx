@@ -39,8 +39,8 @@ export const VideoTrackingPlayer: React.FC = () => {
   // Roboflow YOLOv8 Configuration
   const [showRoboflowModal, setShowRoboflowModal] = useState(false);
   const [roboflowConfig, setRoboflowConfig] = useState({
-    apiKey: 'gYKfKrH2HNcdMBtoyKbb',
-    modelEndpoint: 'ngoc-nguyen-ovzwb/nhan-dien-bien-bao-giao-thong-va/6',
+    apiKey: '',
+    modelEndpoint: '',
     confidence: 40,
     overlap: 30,
     enabled: true,

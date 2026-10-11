@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+runs/
+models/
+
+__pycache__/
+*.pyc

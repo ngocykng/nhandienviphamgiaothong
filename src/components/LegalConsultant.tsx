@@ -188,10 +188,10 @@ export const LegalConsultant: React.FC = () => {
               </div>
               <div>
                 <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wide">
-                  KẾT QUẢ TƯ VẤN PHÁP LUẬT CHÍNH THỨC
+                  KẾT QUẢ TỔNG HỢP TỪ GEMINI AI
                 </span>
                 <h3 className="text-sm font-bold text-white">
-                  Căn cứ Nghị định 100/2019/NĐ-CP &amp; Cổng TTĐT Chính Phủ
+                  Có đối chiếu nguồn web và văn bản pháp luật
                 </h3>
               </div>
             </div>
@@ -247,7 +247,7 @@ export const LegalConsultant: React.FC = () => {
             })}
           </div>
 
-          {/* Verified Official Sources (Google Search Grounding & moit.gov.vn) */}
+          {/* Sources returned by Gemini grounding */}
           {response.sources && response.sources.length > 0 && (
             <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2">
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
