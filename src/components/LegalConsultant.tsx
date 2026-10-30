@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   Search,
-  BookOpen,
   ExternalLink,
   Sparkles,
   Loader2,
@@ -12,6 +11,7 @@ import {
   HelpCircle,
   FileCheck2,
   Scale,
+  MessageSquare,
 } from 'lucide-react';
 import { POPULAR_LEGAL_TOPICS } from '../data/trafficLaws';
 import { LegalConsultationResponse } from '../types/traffic';
@@ -78,58 +78,63 @@ export const LegalConsultant: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-slate-900 border border-blue-900/40 p-6 rounded-2xl shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-xs font-semibold border border-blue-500/30 flex items-center gap-1.5">
-                <Scale className="w-3.5 h-3.5" />
-                TRA CỨU PHÁP LUẬT VIỆT NAM CHÍNH THỐNG
+      <div className="glass rounded-2xl p-6 animate-fade-in bg-gradient-to-r from-blue-50/80 via-white to-indigo-50/60 dark:from-slate-900/90 dark:to-slate-900/80 border border-blue-100 dark:border-slate-800 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold text-blue-700 bg-blue-100/70 border border-blue-200">
+                <Scale className="w-3.5 h-3.5 text-blue-600" />
+                TRA CỨU PHÁP LUẬT VIỆT NAM
               </span>
-              <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[11px] font-mono flex items-center gap-1">
-                <Globe className="w-3 h-3" />
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono text-emerald-700 bg-emerald-100/70 border border-emerald-200">
+                <div className="status-dot online" style={{ width: '6px', height: '6px' }} />
                 moit.gov.vn Grounded
               </span>
             </div>
-            <h2 className="text-xl md:text-2xl font-bold text-white">
-              Tư Vấn Luật Giao Thông AI &amp; Tra Cứu Cổng TTĐT Chính Phủ
+            <h2 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white">
+              Tư Vấn Luật Giao Thông AI
             </h2>
-            <p className="text-xs md:text-sm text-slate-300 max-w-3xl leading-relaxed">
-              Hệ thống AI tự động tra cứu, đối chiếu các điều khoản pháp luật từ Nghị định 100/2019/NĐ-CP, Nghị định 123/2021/NĐ-CP, Luật Trật tự an toàn giao thông đường bộ và Cổng thông tin điện tử Bộ Công Thương (moit.gov.vn), Bộ Công An.
+            <p className="text-xs md:text-sm text-slate-600 dark:text-slate-300 max-w-3xl leading-relaxed">
+              Hệ thống AI tự động tra cứu, đối chiếu các điều khoản pháp luật từ Nghị định 100/2019/NĐ-CP, Nghị định 123/2021/NĐ-CP và Cổng thông tin điện tử Bộ Công Thương.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 bg-slate-900/80 p-3 rounded-xl border border-slate-800 text-xs text-slate-300">
+          <div
+            className="flex items-center gap-3 shrink-0 bg-white/90 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-3.5 cursor-pointer select-none shadow-sm"
+            onClick={() => setSearchMoit(!searchMoit)}
+          >
             <input
               type="checkbox"
               id="searchMoit"
               checked={searchMoit}
               onChange={(e) => setSearchMoit(e.target.checked)}
-              className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-700 bg-slate-800 cursor-pointer"
+              className="w-4 h-4 rounded text-blue-600 border-slate-300 cursor-pointer accent-blue-600"
             />
-            <label htmlFor="searchMoit" className="cursor-pointer select-none">
-              <span className="font-semibold text-white block">Tra cứu moit.gov.vn</span>
-              <span className="text-[11px] text-slate-400">Kiểm tra thông tin từ Cổng TTĐT Bộ Công Thương</span>
+            <label htmlFor="searchMoit" className="cursor-pointer text-xs">
+              <span className="font-bold text-slate-800 dark:text-white block">Tra cứu moit.gov.vn</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">Đối chiếu từ Cổng TTĐT Bộ Công Thương</span>
             </label>
           </div>
         </div>
       </div>
 
       {/* Query Search Form */}
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="relative">
+      <form onSubmit={handleSubmit} className="space-y-4 animate-fade-in" style={{ animationDelay: '80ms' }}>
+        <div className="relative group">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-blue-50 text-blue-600">
+            <Search className="w-4 h-4" />
+          </div>
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Nhập tình huống hoặc câu hỏi pháp luật (VD: Mức phạt vượt đèn đỏ ô tô năm 2026? Nồng độ cồn tước bằng mấy tháng?...)"
-            className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-4 pl-12 pr-36 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-xl transition"
+            placeholder="Nhập tình huống hoặc câu hỏi pháp luật (VD: Mức phạt vượt đèn đỏ ô tô năm 2026?)"
+            className="input-field py-4 pl-14 pr-40 text-sm rounded-2xl shadow-sm"
           />
-          <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
           <button
             type="submit"
             disabled={!query.trim() || isLoading}
-            className="absolute right-2 top-1/2 -translate-y-1/2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-600/30 transition disabled:opacity-50"
+            className="btn btn-primary absolute right-2.5 top-1/2 -translate-y-1/2 text-xs py-2.5 disabled:opacity-40"
           >
             {isLoading ? (
               <>
@@ -146,17 +151,17 @@ export const LegalConsultant: React.FC = () => {
         </div>
 
         {/* Popular Topic Chips */}
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <span className="text-xs font-semibold text-slate-400 flex items-center gap-1">
-            <HelpCircle className="w-3.5 h-3.5 text-blue-400" />
-            <span>Chủ đề phổ biến:</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+            <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
+            <span>Chủ đề nổi bật:</span>
           </span>
           {POPULAR_LEGAL_TOPICS.map((item, idx) => (
             <button
               key={idx}
               type="button"
               onClick={() => handleSelectPreset(item.query, item.category)}
-              className="text-xs px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition"
+              className="text-[11px] px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-blue-600 hover:border-blue-300 dark:hover:text-blue-400 card-interactive shadow-xs font-medium"
             >
               {item.title}
             </button>
@@ -166,64 +171,87 @@ export const LegalConsultant: React.FC = () => {
 
       {/* Error state */}
       {error && (
-        <div className="p-4 bg-red-950/40 border border-red-800 rounded-2xl text-xs text-red-300 flex items-center gap-3">
-          <div className="p-2 bg-red-500/20 rounded-lg text-red-400">
+        <div className="p-4 rounded-2xl flex items-center gap-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 animate-fade-in font-medium">
+          <div className="p-2 rounded-xl bg-rose-100 text-rose-600">
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
-            <span className="font-semibold block">Thông báo từ hệ thống:</span>
+            <span className="font-bold block">Thông báo từ hệ thống:</span>
             <span>{error}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {isLoading && !response && (
+        <div className="glass rounded-2xl p-12 flex flex-col items-center justify-center gap-4 animate-fade-in bg-white/90 dark:bg-slate-900/80">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center animate-pulse-glow shadow-md" style={{ background: 'var(--gradient-primary)' }}>
+            <MessageSquare className="w-6 h-6 text-white" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-bold text-slate-800 dark:text-slate-200">Đang tra cứu và đối chiếu luật...</p>
+            <p className="text-[11px] text-slate-500 mt-1">Gemini AI đang tổng hợp các nghị định và văn bản hiện hành</p>
+          </div>
+          <div className="w-48 h-1 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700">
+            <div className="h-full rounded-full animate-shimmer" style={{ background: 'var(--gradient-primary)', width: '60%' }} />
           </div>
         </div>
       )}
 
       {/* Response Display */}
       {response && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-2xl">
+        <div className="glass rounded-2xl p-6 space-y-6 animate-slide-up bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md">
           {/* Header of Response */}
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-400">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-600">
                 <FileCheck2 className="w-5 h-5" />
               </div>
               <div>
-                <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wide">
+                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">
                   KẾT QUẢ TỔNG HỢP TỪ GEMINI AI
                 </span>
-                <h3 className="text-sm font-bold text-white">
-                  Có đối chiếu nguồn web và văn bản pháp luật
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Đã đối chiếu nguồn pháp lý chính thức
                 </h3>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleCopy}
-                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 border border-slate-700 transition"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Đã sao chép</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Sao chép câu trả lời</span>
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              onClick={handleCopy}
+              className="btn btn-ghost text-xs py-2 shadow-xs"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-600 font-bold">Đã sao chép</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Sao chép kết quả</span>
+                </>
+              )}
+            </button>
           </div>
 
           {/* Formatted Answer Body */}
-          <div className="prose prose-invert max-w-none text-slate-200 text-sm leading-relaxed space-y-4">
+          <div className="text-slate-800 dark:text-slate-200 text-sm leading-relaxed space-y-4">
             {response.answer.split('\n\n').map((paragraph, index) => {
               // Heading
-              if (paragraph.startsWith('###') || paragraph.startsWith('##') || paragraph.startsWith('1.') || paragraph.startsWith('2.') || paragraph.startsWith('3.') || paragraph.startsWith('4.') || paragraph.startsWith('5.') || paragraph.startsWith('6.')) {
+              if (
+                paragraph.startsWith('###') ||
+                paragraph.startsWith('##') ||
+                paragraph.startsWith('1.') ||
+                paragraph.startsWith('2.') ||
+                paragraph.startsWith('3.') ||
+                paragraph.startsWith('4.') ||
+                paragraph.startsWith('5.') ||
+                paragraph.startsWith('6.')
+              ) {
                 return (
-                  <div key={index} className="pt-2">
-                    <p className="font-bold text-base text-blue-300 border-l-2 border-blue-500 pl-3">
+                  <div key={index} className="pt-2 animate-fade-in" style={{ animationDelay: `${index * 40}ms` }}>
+                    <p className="font-bold text-base text-blue-700 dark:text-blue-400 border-l-4 border-blue-600 pl-3">
                       {paragraph.replace(/^#+\s*/, '')}
                     </p>
                   </div>
@@ -232,7 +260,7 @@ export const LegalConsultant: React.FC = () => {
               // Bullet lists
               if (paragraph.includes('\n- ') || paragraph.startsWith('- ')) {
                 return (
-                  <ul key={index} className="list-disc pl-5 space-y-1 text-slate-300">
+                  <ul key={index} className="list-disc pl-5 space-y-1.5 text-slate-700 dark:text-slate-300">
                     {paragraph.split('\n').map((line, lIdx) => (
                       <li key={lIdx}>{line.replace(/^-\s*/, '')}</li>
                     ))}
@@ -240,7 +268,7 @@ export const LegalConsultant: React.FC = () => {
                 );
               }
               return (
-                <p key={index} className="text-slate-300">
+                <p key={index} className="text-slate-700 dark:text-slate-300 leading-relaxed">
                   {paragraph}
                 </p>
               );
@@ -249,22 +277,22 @@ export const LegalConsultant: React.FC = () => {
 
           {/* Sources returned by Gemini grounding */}
           {response.sources && response.sources.length > 0 && (
-            <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-blue-400" />
-                <span>Nguồn tham chiếu &amp; Cổng thông tin xác thực ({response.sources.length}):</span>
+            <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700 rounded-xl p-4 space-y-3">
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <Globe className="w-3.5 h-3.5 text-blue-600" />
+                <span>Nguồn tham chiếu &amp; Cổng thông tin ({response.sources.length}):</span>
               </span>
-              <div className="flex flex-wrap gap-2 pt-1">
+              <div className="flex flex-wrap gap-2">
                 {response.sources.map((src, i) => (
                   <a
                     key={i}
                     href={src.uri}
                     target="_blank"
                     rel="noreferrer"
-                    className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1.5 transition"
+                    className="px-3 py-2 rounded-xl text-xs text-blue-700 bg-white dark:bg-slate-800 dark:text-blue-400 border border-blue-200 dark:border-slate-700 hover:border-blue-400 flex items-center gap-2 card-interactive shadow-xs font-medium"
                   >
                     <span>{src.title || 'Cổng thông tin bộ ngành'}</span>
-                    <ExternalLink className="w-3 h-3 text-slate-500" />
+                    <ExternalLink className="w-3 h-3 text-slate-400" />
                   </a>
                 ))}
               </div>
@@ -272,34 +300,19 @@ export const LegalConsultant: React.FC = () => {
           )}
 
           {/* Official government links */}
-          <div className="border-t border-slate-800 pt-4 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-3">
+          <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
             <span className="font-mono">
               Thời gian xác thực: {new Date(response.timestamp).toLocaleTimeString('vi-VN')}
             </span>
-            <div className="flex items-center gap-4">
-              <a
-                href="https://moit.gov.vn/"
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-blue-400 underline transition"
-              >
-                Cổng TTĐT Bộ Công Thương (moit.gov.vn)
+            <div className="flex items-center gap-4 font-medium">
+              <a href="https://moit.gov.vn/" target="_blank" rel="noreferrer" className="hover:text-blue-600 underline transition">
+                moit.gov.vn
               </a>
-              <a
-                href="https://csgt.vn/"
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-blue-400 underline transition"
-              >
-                Cổng tra cứu CSGT (csgt.vn)
+              <a href="https://csgt.vn/" target="_blank" rel="noreferrer" className="hover:text-blue-600 underline transition">
+                csgt.vn
               </a>
-              <a
-                href="https://dichvucong.gov.vn"
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-blue-400 underline transition"
-              >
-                Dịch vụ công Quốc gia
+              <a href="https://dichvucong.gov.vn" target="_blank" rel="noreferrer" className="hover:text-blue-600 underline transition">
+                dichvucong.gov.vn
               </a>
             </div>
           </div>

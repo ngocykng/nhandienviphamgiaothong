@@ -4,6 +4,9 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import mysql from 'mysql2/promise';
 
 dotenv.config({ path: ['.env.local', '.env'] });
 
@@ -12,12 +15,130 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL?.replace(/\/$/, '');
+const AI_SERVICE_URL = (process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 const ALLOW_SIMULATION = process.env.ALLOW_SIMULATION === 'true';
+const ROBOFLOW_MODEL_ID = process.env.ROBOFLOW_MODEL_ID?.trim();
+const ROBOFLOW_API_KEY = process.env.ROBOFLOW_API_KEY?.trim();
+const JWT_SECRET = process.env.JWT_SECRET;
+const AUTH_COOKIE = 'viettraffic_session';
+const db = process.env.MYSQL_HOST && process.env.MYSQL_USER && process.env.MYSQL_DATABASE
+  ? mysql.createPool({
+      host: process.env.MYSQL_HOST,
+      port: Number(process.env.MYSQL_PORT || 3306),
+      user: process.env.MYSQL_USER,
+      password: process.env.MYSQL_PASSWORD || '',
+      database: process.env.MYSQL_DATABASE,
+      connectionLimit: 10,
+    })
+  : null;
 
 // Enable large JSON payload for base64 video frames
 app.use(express.json({ limit: '60mb' }));
 app.use(express.urlencoded({ extended: true, limit: '60mb' }));
+
+function readCookie(request: Request, name: string): string | null {
+  const cookieHeader = request.headers.cookie || '';
+  const cookie = cookieHeader.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`));
+  return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : null;
+}
+
+function requireAuthConfig(): mysql.Pool {
+  if (!db || !JWT_SECRET) {
+    throw new Error('Authentication is not configured. Set MySQL and JWT environment variables.');
+  }
+  return db;
+}
+
+function createSession(userId: number): string {
+  if (!JWT_SECRET) throw new Error('JWT_SECRET is not configured');
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });
+}
+
+function getSessionUserId(request: Request): number | null {
+  if (!JWT_SECRET) return null;
+  const token = readCookie(request, AUTH_COOKIE);
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    return typeof payload === 'object' && typeof payload.userId === 'number' ? payload.userId : null;
+  } catch {
+    return null;
+  }
+}
+
+app.post('/api/auth/register', async (req: Request, res: Response) => {
+  try {
+    const pool = requireAuthConfig();
+    const { fullName, email, password } = req.body;
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    if (typeof fullName !== 'string' || fullName.trim().length < 2) {
+      return res.status(400).json({ error: 'Họ tên phải có ít nhất 2 ký tự' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ error: 'Email không hợp lệ' });
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 8 ký tự' });
+    }
+    const [existing] = await pool.execute<mysql.RowDataPacket[]>('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
+    if (existing.length > 0) return res.status(409).json({ error: 'Email này đã được đăng ký' });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const [result] = await pool.execute<mysql.ResultSetHeader>(
+      'INSERT INTO users (full_name, email, password_hash) VALUES (?, ?, ?)',
+      [fullName.trim(), normalizedEmail, passwordHash],
+    );
+    const token = createSession(result.insertId);
+    res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax`);
+    return res.status(201).json({ user: { id: result.insertId, fullName: fullName.trim(), email: normalizedEmail } });
+  } catch (error: any) {
+    console.error('Registration failed:', error?.message);
+    return res.status(503).json({ error: error?.message || 'Không thể đăng ký tài khoản' });
+  }
+});
+
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  try {
+    const pool = requireAuthConfig();
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const password = req.body.password;
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id, full_name, email, password_hash FROM users WHERE email = ? LIMIT 1',
+      [email],
+    );
+    const user = rows[0];
+    if (!user || typeof password !== 'string' || !(await bcrypt.compare(password, user.password_hash))) {
+      return res.status(401).json({ error: 'Email hoặc mật khẩu không đúng' });
+    }
+    const token = createSession(user.id);
+    res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax`);
+    return res.json({ user: { id: user.id, fullName: user.full_name, email: user.email } });
+  } catch (error: any) {
+    console.error('Login failed:', error?.message);
+    return res.status(503).json({ error: error?.message || 'Không thể đăng nhập' });
+  }
+});
+
+app.get('/api/auth/me', async (req: Request, res: Response) => {
+  try {
+    const pool = requireAuthConfig();
+    const userId = getSessionUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Chưa đăng nhập' });
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id, full_name, email FROM users WHERE id = ? LIMIT 1',
+      [userId],
+    );
+    if (!rows[0]) return res.status(401).json({ error: 'Tài khoản không tồn tại' });
+    return res.json({ user: { id: rows[0].id, fullName: rows[0].full_name, email: rows[0].email } });
+  } catch (error: any) {
+    return res.status(503).json({ error: error?.message || 'Không thể kiểm tra phiên đăng nhập' });
+  }
+});
+
+app.post('/api/auth/logout', (_req: Request, res: Response) => {
+  res.setHeader('Set-Cookie', `${AUTH_COOKIE}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`);
+  return res.json({ success: true });
+});
 
 // Initialize Gemini Client
 const ai = new GoogleGenAI({
@@ -268,51 +389,19 @@ Hãy kiểm tra chi tiết khung hình và thực thể được đánh dấu, s
 // API 3: Roboflow YOLOv8 Object Detection Inference
 app.post('/api/roboflow/detect', async (req: Request, res: Response) => {
   try {
-    const { imageBase64, modelEndpoint, apiKey, confidence, overlap, scenarioKeyframe } = req.body;
+    const { imageBase64, modelEndpoint, confidence, overlap, scenarioKeyframe } = req.body;
 
     if (!imageBase64) {
       return res.status(400).json({ error: 'imageBase64 frame data is required' });
     }
 
     const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-    const model = modelEndpoint || 'vietnam-traffic-yolov8/1';
+    const model = modelEndpoint || ROBOFLOW_MODEL_ID || 'vietnam-traffic-yolov8/1';
     const conf = confidence || 40;
     const ovlp = overlap || 30;
-    const key = apiKey || process.env.ROBOFLOW_API_KEY;
+    const key = ROBOFLOW_API_KEY;
 
     const startTime = Date.now();
-
-    if (AI_SERVICE_URL) {
-      try {
-        const aiResponse = await fetch(`${AI_SERVICE_URL}/predict/image`, {
-          method: 'POST',
-          body: (() => {
-            const form = new FormData();
-            form.append('file', new Blob([Buffer.from(cleanBase64, 'base64')], { type: 'image/jpeg' }), 'frame.jpg');
-            return form;
-          })(),
-        });
-
-        const aiData = await aiResponse.json();
-        if (!aiResponse.ok) {
-          return res.status(aiResponse.status).json({
-            error: aiData.detail || 'Local Python AI service rejected the image',
-            engine: 'python_yolo_local',
-          });
-        }
-        return res.json({
-          ...aiData,
-          time: Date.now() - startTime,
-        });
-      } catch (aiError: any) {
-        console.error('Local Python AI service unavailable:', aiError?.message);
-        return res.status(503).json({
-          error: 'Local Python AI service is unavailable',
-          detail: aiError?.message,
-          engine: 'python_yolo_local',
-        });
-      }
-    }
 
     // If API Key is present, call Roboflow Hosted Inference API
     if (key) {
@@ -342,6 +431,29 @@ app.post('/api/roboflow/detect', async (req: Request, res: Response) => {
         }
       } catch (rfErr: any) {
         console.warn('Roboflow API connection error, activating embedded YOLOv8 Engine:', rfErr?.message);
+      }
+    }
+
+    if (AI_SERVICE_URL) {
+      try {
+        const form = new FormData();
+        form.append('file', new Blob([Buffer.from(cleanBase64, 'base64')], { type: 'image/jpeg' }), 'frame.jpg');
+        const aiResponse = await fetch(`${AI_SERVICE_URL}/predict/image`, { method: 'POST', body: form });
+        const aiData = await aiResponse.json();
+        if (!aiResponse.ok) {
+          return res.status(aiResponse.status).json({
+            error: aiData.detail || 'Local Python AI service rejected the image',
+            engine: 'python_yolo_local',
+          });
+        }
+        return res.json({ ...aiData, time: Date.now() - startTime });
+      } catch (aiError: any) {
+        console.error('Local Python AI service unavailable:', aiError?.message);
+        return res.status(503).json({
+          error: 'Local Python AI service is unavailable',
+          detail: aiError?.message,
+          engine: 'python_yolo_local',
+        });
       }
     }
 

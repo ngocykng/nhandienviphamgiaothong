@@ -10,7 +10,8 @@ from PIL import Image, UnidentifiedImageError
 
 app = FastAPI(title="VietTraffic Local AI", version="0.1.0")
 
-MODEL_PATH = Path(os.getenv("MODEL_PATH", "../models/best.pt"))
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = (BASE_DIR / os.getenv("MODEL_PATH", "../runs/detect/traffic-baseline/weights/best.pt")).resolve()
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.25"))
 IOU_THRESHOLD = float(os.getenv("IOU_THRESHOLD", "0.45"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "20")) * 1024 * 1024

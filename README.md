@@ -70,6 +70,40 @@ GEMINI_API_KEY="your_gemini_api_key_here"
 
 Không chia sẻ API key và không commit file `.env.local` lên repository. File này đã được loại trừ trong `.gitignore`.
 
+## Cấu hình đăng nhập bằng MySQL
+
+Chức năng đăng nhập/đăng ký sử dụng MySQL và cookie phiên `HttpOnly`.
+
+1. Mở MySQL Workbench và chạy toàn bộ file `database/auth.sql`.
+2. Sao chép các biến sau vào `.env.local`, thay mật khẩu và tạo một `JWT_SECRET` dài, ngẫu nhiên:
+
+```env
+MYSQL_HOST="127.0.0.1"
+MYSQL_PORT="3306"
+MYSQL_USER="root"
+MYSQL_PASSWORD="your_mysql_password"
+MYSQL_DATABASE="viettraffic"
+JWT_SECRET="replace_with_a_long_random_secret"
+```
+
+3. Khởi động lại server bằng `npm run dev`.
+
+Mật khẩu người dùng được băm bằng bcrypt trước khi lưu. Token phiên không được lưu trong
+`localStorage`; server lưu token trong cookie `HttpOnly` có thời hạn 7 ngày.
+
+## Cấu hình Roboflow
+
+Để gọi Roboflow Hosted Inference, thêm cấu hình vào `.env.local` của backend:
+
+```env
+ROBOFLOW_MODEL_ID="workspace/project/version"
+ROBOFLOW_API_KEY="your_roboflow_private_api_key"
+```
+
+`ROBOFLOW_API_KEY` chỉ được đọc ở server và không được gửi xuống trình duyệt. Nếu có
+cả cấu hình Roboflow và `AI_SERVICE_URL`, server sẽ ưu tiên Roboflow; khi Roboflow
+không được cấu hình, server mới chuyển sang model YOLO local qua FastAPI.
+
 ## Chạy ở môi trường phát triển
 
 ```powershell

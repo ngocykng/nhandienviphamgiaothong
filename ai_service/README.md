@@ -14,7 +14,9 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Train or copy a model to `models\best.pt`, then start the service:
+The default configuration uses the trained model at
+`..\runs\detect\traffic-baseline\weights\best.pt`. To use another model, set
+`MODEL_PATH` to a path relative to this directory.
 
 ```powershell
 uvicorn main:app --host 127.0.0.1 --port 8000
