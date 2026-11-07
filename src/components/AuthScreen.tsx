@@ -7,6 +7,7 @@ interface AuthUser {
   id: number;
   fullName: string;
   email: string;
+  role: 'citizen' | 'admin';
 }
 
 interface Props {
@@ -123,7 +124,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 group-focus-within:text-blue-600 transition-colors" />
                   <input
                     required
-                    type="email"
+                    type={isRegister ? 'email' : 'text'}
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     className="input-field pl-11 border-2 border-slate-300 font-medium text-slate-950 focus:border-blue-600"

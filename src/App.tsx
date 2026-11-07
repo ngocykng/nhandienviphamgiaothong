@@ -9,6 +9,7 @@ import {
 import {
   QuickPenaltyLookup,
 } from './components/QuickPenaltyLookup';
+import { AdminDashboard } from './components/AdminDashboard';
 import {
   ShieldAlert,
   Video,
@@ -25,15 +26,19 @@ import {
   Globe,
   Sun,
   Moon,
+  LayoutDashboard,
 } from 'lucide-react';
 
-type TabKey = 'tracking' | 'consultant' | 'matrix';
+type TabKey = 'tracking' | 'consultant' | 'matrix' | 'admin';
+type AppUser = { id: number; fullName: string; email: string; role: 'citizen' | 'admin' };
 
 const NAV_ITEMS: { key: TabKey; icon: React.ElementType; label: string; desc: string }[] = [
   { key: 'tracking', icon: Video, label: 'AI Tracking Video', desc: 'Giám sát & phân tích phương tiện' },
   { key: 'consultant', icon: Scale, label: 'Tư Vấn Luật', desc: 'Tra cứu pháp luật giao thông' },
   { key: 'matrix', icon: FileSpreadsheet, label: 'Khung Mức Phạt', desc: 'Bảng biểu mức xử phạt' },
 ];
+
+const ADMIN_NAV_ITEM = { key: 'admin' as const, icon: LayoutDashboard, label: 'Quản trị', desc: 'Tổng quan dữ liệu hệ thống' };
 
 const FOOTER_LINKS = [
   { label: 'Bộ Công Thương', url: 'https://moit.gov.vn/', domain: 'moit.gov.vn' },
@@ -42,7 +47,7 @@ const FOOTER_LINKS = [
 ];
 
 export default function App() {
-  const [user, setUser] = useState<{ id: number; fullName: string; email: string } | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('tracking');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -69,6 +74,20 @@ export default function App() {
       .finally(() => setAuthChecked(true));
   }, []);
 
+  useEffect(() => {
+    if (user) setActiveTab(user.role === 'admin' ? 'admin' : 'tracking');
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'citizen' || !['tracking', 'consultant', 'matrix'].includes(activeTab)) return;
+    fetch('/api/user/interactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ section: activeTab }),
+    }).catch(() => undefined);
+  }, [user?.id, user?.role, activeTab]);
+
   if (!authChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -85,6 +104,8 @@ export default function App() {
   }
 
   if (!user) return <AuthScreen onAuthenticated={setUser} />;
+
+  const visibleNavItems = user.role === 'admin' ? [ADMIN_NAV_ITEM] : NAV_ITEMS;
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
@@ -159,7 +180,7 @@ export default function App() {
         </div>
 
         {/* Status Badge */}
-        <div className="bg-slate-100/80 dark:bg-slate-800/60 rounded-xl px-3 py-2.5 mb-6 flex items-center gap-2.5 border border-slate-200/80 dark:border-slate-700/60 animate-fade-in">
+        {user.role === 'citizen' && <div className="bg-slate-100/80 dark:bg-slate-800/60 rounded-xl px-3 py-2.5 mb-6 flex items-center gap-2.5 border border-slate-200/80 dark:border-slate-700/60 animate-fade-in">
           <div className="status-dot online" />
           <div className="min-w-0 flex-1">
             <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">
@@ -170,12 +191,12 @@ export default function App() {
             </span>
           </div>
           <Cpu className="w-3.5 h-3.5 text-slate-400" />
-        </div>
+        </div>}
 
         {/* Navigation */}
         <div className="space-y-1.5 flex-1 stagger-children">
           <span className="section-label block mb-2 mt-1">Chức năng</span>
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.key;
             return (
@@ -214,6 +235,7 @@ export default function App() {
 
         {/* Quick Links */}
         <div className="mt-auto pt-4 space-y-3">
+          {user.role === 'citizen' && <>
           <span className="section-label block">Cổng thông tin chính thức</span>
           <div className="space-y-1">
             {FOOTER_LINKS.map((link) => (
@@ -230,6 +252,7 @@ export default function App() {
               </a>
             ))}
           </div>
+          </>}
 
           {/* User Profile */}
           <div className="bg-slate-100/90 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 rounded-xl p-3 flex items-center gap-3 mt-4 shadow-sm">
@@ -257,11 +280,11 @@ export default function App() {
         <div className="flex items-center justify-between mb-6 animate-fade-in">
           <div>
             <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>{NAV_ITEMS.find(n => n.key === activeTab)?.label}</span>
+              <span>{visibleNavItems.find(n => n.key === activeTab)?.label}</span>
               <Sparkles className="w-4 h-4 text-amber-500" />
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-              {NAV_ITEMS.find(n => n.key === activeTab)?.desc}
+              {visibleNavItems.find(n => n.key === activeTab)?.desc}
             </p>
           </div>
           <div className="hidden sm:flex items-center gap-2">
@@ -277,13 +300,15 @@ export default function App() {
           {activeTab === 'tracking' && <VideoTrackingPlayer />}
           {activeTab === 'consultant' && <LegalConsultant />}
           {activeTab === 'matrix' && <QuickPenaltyLookup />}
+          {activeTab === 'admin' && user.role === 'admin' && <AdminDashboard currentUserId={user.id} />}
         </div>
 
         {/* Footer */}
         <footer className="mt-12 pt-6 border-t border-slate-200/80 dark:border-slate-800 pb-8 text-center">
           <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-            VietTraffic AI — Nền tảng Trí tuệ Nhân tạo Giám sát Giao thông &amp; Tư vấn Pháp luật.
-            Dẫn chiếu theo Nghị định 100/2019/NĐ-CP, Nghị định 123/2021/NĐ-CP và Luật Trật tự an toàn giao thông đường bộ Việt Nam.
+            {user.role === 'admin'
+              ? 'VietTraffic AI — Khu vực quản lý tài khoản và dữ liệu tương tác người dùng.'
+              : 'VietTraffic AI — Nền tảng Trí tuệ Nhân tạo Giám sát Giao thông & Tư vấn Pháp luật. Dẫn chiếu theo các văn bản pháp luật giao thông Việt Nam.'}
           </p>
         </footer>
       </main>

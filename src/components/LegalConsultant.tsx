@@ -12,6 +12,7 @@ import {
   FileCheck2,
   Scale,
   MessageSquare,
+  History,
 } from 'lucide-react';
 import { POPULAR_LEGAL_TOPICS } from '../data/trafficLaws';
 import { LegalConsultationResponse } from '../types/traffic';
@@ -24,6 +25,25 @@ export const LegalConsultant: React.FC = () => {
   const [response, setResponse] = useState<LegalConsultationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [history, setHistory] = useState<Array<{ id: number; question: string; answer: string; category: string | null; created_at: string }>>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  const loadHistory = async () => {
+    setIsLoadingHistory(true);
+    setHistoryError(null);
+    try {
+      const res = await fetch('/api/legal/history', { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Không thể tải lịch sử tư vấn');
+      setHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : 'Không thể tải lịch sử tư vấn');
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
 
   // Preset query click
   const handleSelectPreset = (presetQuery: string, presetCategory: string) => {
@@ -60,6 +80,7 @@ export const LegalConsultant: React.FC = () => {
       }
 
       setResponse(data);
+      if (showHistory) void loadHistory();
     } catch (err: any) {
       console.error('Error during legal consultation:', err);
       setError(err.message || 'Không thể kết nối đến máy chủ tra cứu');
@@ -168,6 +189,39 @@ export const LegalConsultant: React.FC = () => {
           ))}
         </div>
       </form>
+
+      <section className="glass rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-4">
+        <button
+          type="button"
+          onClick={() => {
+            const next = !showHistory;
+            setShowHistory(next);
+            if (next) void loadHistory();
+          }}
+          className="flex w-full items-center justify-between text-sm font-bold text-slate-800 dark:text-white"
+        >
+          <span className="flex items-center gap-2"><History className="w-4 h-4 text-blue-600" /> Lịch sử tư vấn đã lưu</span>
+          <span className="text-xs text-slate-500">{showHistory ? 'Ẩn' : 'Xem'}</span>
+        </button>
+        {showHistory && (
+          <div className="space-y-3">
+            {isLoadingHistory && <p className="text-xs text-slate-500">Đang tải lịch sử...</p>}
+            {historyError && <p className="text-xs text-rose-600">{historyError}</p>}
+            {!isLoadingHistory && !historyError && history.length === 0 && <p className="text-xs text-slate-500">Chưa có câu hỏi nào được lưu.</p>}
+            {history.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                onClick={() => { setQuery(item.question); setResponse({ answer: item.answer, sources: [], timestamp: item.created_at }); }}
+                className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-left hover:border-blue-300"
+              >
+                <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200">{item.question}</span>
+                <span className="mt-1 block text-[10px] text-slate-500">{new Date(item.created_at).toLocaleString('vi-VN')}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Error state */}
       {error && (

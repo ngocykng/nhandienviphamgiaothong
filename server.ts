@@ -66,6 +66,25 @@ function getSessionUserId(request: Request): number | null {
   }
 }
 
+async function requireAdmin(request: Request, response: Response): Promise<boolean> {
+  const userId = getSessionUserId(request);
+  if (!userId) {
+    response.status(401).json({ error: 'Vui lòng đăng nhập' });
+    return false;
+  }
+
+  const pool = requireAuthConfig();
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT role FROM users WHERE id = ? LIMIT 1',
+    [userId],
+  );
+  if (rows[0]?.role !== 'admin') {
+    response.status(403).json({ error: 'Tài khoản không có quyền quản trị' });
+    return false;
+  }
+  return true;
+}
+
 app.post('/api/auth/register', async (req: Request, res: Response) => {
   try {
     const pool = requireAuthConfig();
@@ -90,7 +109,7 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
     );
     const token = createSession(result.insertId);
     res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax`);
-    return res.status(201).json({ user: { id: result.insertId, fullName: fullName.trim(), email: normalizedEmail } });
+    return res.status(201).json({ user: { id: result.insertId, fullName: fullName.trim(), email: normalizedEmail, role: 'citizen' } });
   } catch (error: any) {
     console.error('Registration failed:', error?.message);
     return res.status(503).json({ error: error?.message || 'Không thể đăng ký tài khoản' });
@@ -103,7 +122,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     const password = req.body.password;
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, full_name, email, password_hash FROM users WHERE email = ? LIMIT 1',
+      'SELECT id, full_name, email, password_hash, role FROM users WHERE email = ? LIMIT 1',
       [email],
     );
     const user = rows[0];
@@ -112,7 +131,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     }
     const token = createSession(user.id);
     res.setHeader('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax`);
-    return res.json({ user: { id: user.id, fullName: user.full_name, email: user.email } });
+    return res.json({ user: { id: user.id, fullName: user.full_name, email: user.email, role: user.role } });
   } catch (error: any) {
     console.error('Login failed:', error?.message);
     return res.status(503).json({ error: error?.message || 'Không thể đăng nhập' });
@@ -125,11 +144,11 @@ app.get('/api/auth/me', async (req: Request, res: Response) => {
     const userId = getSessionUserId(req);
     if (!userId) return res.status(401).json({ error: 'Chưa đăng nhập' });
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, full_name, email FROM users WHERE id = ? LIMIT 1',
+      'SELECT id, full_name, email, role FROM users WHERE id = ? LIMIT 1',
       [userId],
     );
     if (!rows[0]) return res.status(401).json({ error: 'Tài khoản không tồn tại' });
-    return res.json({ user: { id: rows[0].id, fullName: rows[0].full_name, email: rows[0].email } });
+    return res.json({ user: { id: rows[0].id, fullName: rows[0].full_name, email: rows[0].email, role: rows[0].role } });
   } catch (error: any) {
     return res.status(503).json({ error: error?.message || 'Không thể kiểm tra phiên đăng nhập' });
   }
@@ -138,6 +157,130 @@ app.get('/api/auth/me', async (req: Request, res: Response) => {
 app.post('/api/auth/logout', (_req: Request, res: Response) => {
   res.setHeader('Set-Cookie', `${AUTH_COOKIE}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`);
   return res.json({ success: true });
+});
+
+app.get('/api/admin/overview', async (req: Request, res: Response) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const pool = requireAuthConfig();
+    const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT COUNT(*) AS total FROM users');
+    const [consultations] = await pool.execute<mysql.RowDataPacket[]>('SELECT COUNT(*) AS total FROM lich_su_tu_van');
+    const [violations] = await pool.execute<mysql.RowDataPacket[]>('SELECT COUNT(*) AS total FROM ho_so_vi_pham');
+    const [pageViews] = await pool.execute<mysql.RowDataPacket[]>('SELECT COUNT(*) AS total FROM nhat_ky_tuong_tac');
+    return res.json({
+      users: Number(users[0].total),
+      consultations: Number(consultations[0].total),
+      violations: Number(violations[0].total),
+      pageViews: Number(pageViews[0].total),
+      interactions: Number(consultations[0].total) + Number(violations[0].total) + Number(pageViews[0].total),
+    });
+  } catch (error: any) {
+    console.error('Admin overview failed:', error?.message);
+    return res.status(500).json({ error: 'Không thể tải dữ liệu quản trị' });
+  }
+});
+
+app.get('/api/admin/users', async (req: Request, res: Response) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const pool = requireAuthConfig();
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const like = `%${search}%`;
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT id, full_name, email, role, created_at
+       FROM users
+       WHERE (? = '' OR full_name LIKE ? OR email LIKE ?)
+       ORDER BY created_at DESC
+       LIMIT 250`,
+      [search, like, like],
+    );
+    return res.json(rows);
+  } catch (error: any) {
+    console.error('Admin user list failed:', error?.message);
+    return res.status(500).json({ error: 'Không thể tải danh sách người dùng' });
+  }
+});
+
+app.patch('/api/admin/users/:id/role', async (req: Request, res: Response) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const targetUserId = Number(req.params.id);
+    const currentUserId = getSessionUserId(req);
+    const { role } = req.body;
+    if (!Number.isSafeInteger(targetUserId) || targetUserId < 1 || !['citizen', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Thông tin tài khoản hoặc vai trò không hợp lệ' });
+    }
+    if (targetUserId === currentUserId && role !== 'admin') {
+      return res.status(400).json({ error: 'Không thể tự hạ quyền quản trị của tài khoản đang đăng nhập' });
+    }
+    const pool = requireAuthConfig();
+    const [existingUsers] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id FROM users WHERE id = ? LIMIT 1',
+      [targetUserId],
+    );
+    if (existingUsers.length === 0) return res.status(404).json({ error: 'Không tìm thấy người dùng' });
+    await pool.execute<mysql.ResultSetHeader>(
+      'UPDATE users SET role = ? WHERE id = ?',
+      [role, targetUserId],
+    );
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error('Admin role update failed:', error?.message);
+    return res.status(500).json({ error: 'Không thể cập nhật vai trò người dùng' });
+  }
+});
+
+app.post('/api/user/interactions', async (req: Request, res: Response) => {
+  try {
+    const userId = getSessionUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Vui lòng đăng nhập' });
+    const { section } = req.body;
+    if (!['tracking', 'consultant', 'matrix'].includes(section)) {
+      return res.status(400).json({ error: 'Khu vực website không hợp lệ' });
+    }
+    const pool = requireAuthConfig();
+    await pool.execute(
+      'INSERT INTO nhat_ky_tuong_tac (user_id, section) VALUES (?, ?)',
+      [userId, section],
+    );
+    return res.status(201).json({ success: true });
+  } catch (error: any) {
+    console.error('User interaction log failed:', error?.message);
+    return res.status(500).json({ error: 'Không thể ghi nhận hoạt động' });
+  }
+});
+
+app.get('/api/admin/interactions', async (req: Request, res: Response) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const pool = requireAuthConfig();
+    const [rows] = await pool.query<mysql.RowDataPacket[]>(
+      `SELECT * FROM (
+         SELECT 'Tư vấn luật' AS activity_type, q.id, q.user_id, u.full_name, u.email,
+                q.question AS summary, q.category AS detail, q.created_at
+         FROM lich_su_tu_van q
+         LEFT JOIN users u ON u.id = q.user_id
+         UNION ALL
+         SELECT 'Lưu hồ sơ vi phạm' AS activity_type, v.id, v.created_by AS user_id,
+                u.full_name, u.email, CONCAT('Biển số: ', v.vehicle_plate) AS summary,
+                v.status AS detail, v.detected_at AS created_at
+         FROM ho_so_vi_pham v
+         LEFT JOIN users u ON u.id = v.created_by
+         UNION ALL
+         SELECT 'Truy cập website' AS activity_type, a.id, a.user_id,
+                u.full_name, u.email, CONCAT('Mở khu vực: ', a.section) AS summary,
+                a.section AS detail, a.created_at
+         FROM nhat_ky_tuong_tac a
+         LEFT JOIN users u ON u.id = a.user_id
+       ) AS user_interactions
+       ORDER BY created_at DESC
+       LIMIT 250`,
+    );
+    return res.json(rows);
+  } catch (error: any) {
+    console.error('Admin interaction list failed:', error?.message);
+    return res.status(500).json({ error: 'Không thể tải dữ liệu tương tác người dùng' });
+  }
 });
 
 // Initialize Gemini Client
@@ -160,26 +303,96 @@ Hãy trả lời đúng ý định của từng tin nhắn, không áp dụng m�
 - Nếu câu hỏi chưa đủ dữ kiện, hãy hỏi lại tối đa các thông tin cần thiết thay vì tự suy đoán.
 Nhiệm vụ khi câu hỏi thuộc lĩnh vực pháp luật:
 1. Các văn bản pháp luật nền tảng:
-   - Luật Trật tự, an toàn giao thông đường bộ (Luật số 36/2024/QH15) và Luật Giao thông đường bộ 2008.
-   - Nghị định 100/2019/NĐ-CP và Nghị định 123/2021/NĐ-CP (sửa đổi, bổ sung quy định xử phạt vi phạm hành chính trong lĩnh vực giao thông đường bộ, đường sắt).
-   - Quy chuẩn kỹ thuật quốc gia về báo hiệu đường bộ QCVN 41:2019/BGTVT.
+   - Luật Trật tự, an toàn giao thông đường bộ số 36/2024/QH15 và Luật Đường bộ số 35/2024/QH15.
+   - Nghị định 168/2024/NĐ-CP về xử phạt giao thông đường bộ, đã được sửa đổi, bổ sung bởi Nghị định 238/2026/NĐ-CP (hiệu lực từ 15/08/2026).
+   - Chỉ viện dẫn văn bản cũ như Nghị định 100/2019/NĐ-CP hoặc 123/2021/NĐ-CP khi xác minh được nội dung đó còn áp dụng cho tình huống cụ thể.
+   - Quy chuẩn kỹ thuật quốc gia về báo hiệu đường bộ hiện hành.
    - Các quy định liên quan đến kinh doanh vận tải, thương mại điện tử, lưu thông hàng hóa, quản lý thị trường từ Cổng thông tin điện tử Bộ Công Thương (moit.gov.vn), Cổng TTĐT Chính Phủ (chinhphu.vn), Bộ Công An (bocongan.gov.vn), Bộ Giao thông Vận tải (mt.gov.vn).
 2. Quy chuẩn trả lời:
    - Trình bày mạch lạc bằng Markdown rõ ràng.
    - Nêu rõ:
      + Tên hành vi vi phạm (nếu có).
-     + Căn cứ pháp lý cụ thể: Điều, Khoản, Điểm của Nghị định 100/2019/NĐ-CP (hoặc NĐ 123/2021/NĐ-CP).
+     + Căn cứ pháp lý cụ thể: Điều, Khoản, Điểm của Nghị định 168/2024/NĐ-CP và phần sửa đổi tương ứng tại Nghị định 238/2026/NĐ-CP nếu có.
      + Mức phạt tiền chi tiết phân chia rõ: Đối với Ô tô, Xe máy / Mô tô, Xe máy điện, Xe đạp, Người đi bộ (nếu áp dụng).
      + Hình thức xử phạt bổ sung (Tước quyền sử dụng Giấy phép lái xe từ bao nhiêu tháng, trừ điểm GPLX, tạm giữ phương tiện...).
      + Trích dẫn thông tin tham chiếu chính thống từ các cổng thông tin (đặc biệt là moit.gov.vn đối với các vấn đề kiểm tra hàng hoá, tem nhãn vận tải thương mại, và bocongan.gov.vn).
      + Lời khuyên thiết thực khi làm việc với lực lượng chức năng hoặc thủ tục nộp phạt trực tuyến qua Cổng Dịch vụ công Quốc gia.
 `;
 
+// API 1.1: Get Penalty Matrix (Tra cứu mức phạt từ DB)
+app.get('/api/penalties', async (req: Request, res: Response) => {
+  try {
+    const pool = requireAuthConfig();
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM bang_muc_phat');
+    return res.json(rows);
+  } catch (error: any) {
+    console.error('Error fetching penalties:', error);
+    return res.status(500).json({ error: 'Không thể lấy dữ liệu mức phạt' });
+  }
+});
+
+// API 1.2: Get Legal History for User
+app.get('/api/legal/history', async (req: Request, res: Response) => {
+  try {
+    const pool = requireAuthConfig();
+    const userId = getSessionUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Chưa đăng nhập' });
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id, question, answer, category, created_at FROM lich_su_tu_van WHERE user_id = ? ORDER BY created_at DESC',
+      [userId]
+    );
+    return res.json(rows);
+  } catch (error: any) {
+    return res.status(500).json({ error: 'Không thể lấy lịch sử tư vấn' });
+  }
+});
+
+// API 1.3: Save Violation (Lưu vi phạm từ AI Tracking)
+app.post('/api/violations', async (req: Request, res: Response) => {
+  try {
+    const pool = requireAuthConfig();
+    const { vehiclePlate, violationId, violationBehavior, evidenceUrl, location, status } = req.body;
+    const userId = getSessionUserId(req);
+
+    if (!vehiclePlate) return res.status(400).json({ error: 'Biển số xe là bắt buộc' });
+
+    // `violation_id` references a numeric penalty row; tracking IDs such as `RF-...` are not DB IDs.
+    let penaltyId: number | null = Number.isSafeInteger(Number(violationId)) && Number(violationId) > 0
+      ? Number(violationId)
+      : null;
+    if (!penaltyId && typeof violationBehavior === 'string' && violationBehavior.trim()) {
+      const [penaltyRows] = await pool.execute<mysql.RowDataPacket[]>(
+        'SELECT id FROM bang_muc_phat WHERE behavior = ? LIMIT 1',
+        [violationBehavior.trim()],
+      );
+      if (penaltyRows[0] && Number.isSafeInteger(Number(penaltyRows[0].id))) {
+        penaltyId = Number(penaltyRows[0].id);
+      }
+    }
+
+    const [result] = await pool.execute<mysql.ResultSetHeader>(
+      'INSERT INTO ho_so_vi_pham (vehicle_plate, violation_id, evidence_url, location, status, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+      [vehiclePlate, penaltyId, evidenceUrl || null, location || null, status || 'pending', userId || null]
+    );
+    return res.json({ success: true, id: result.insertId });
+  } catch (error: any) {
+    console.error('Error saving violation:', error);
+    return res.status(500).json({ error: 'Không thể lưu hồ sơ vi phạm' });
+  }
+});
+
 function withTimeout<T>(promise: Promise<T>, ms: number = 30000): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error('AI request timeout')), ms)),
   ]);
+}
+
+function isTransientGeminiError(error: unknown): boolean {
+  const details = error as { status?: number; statusCode?: number; message?: string };
+  const message = typeof details?.message === 'string' ? details.message : String(error);
+  return [408, 429, 500, 502, 503, 504].includes(Number(details?.status ?? details?.statusCode))
+    || /timeout|timed out|UNAVAILABLE|high demand|temporarily overloaded/i.test(message);
 }
 
 // API 1: Traffic Law Legal Consultation with Search Grounding
@@ -203,22 +416,20 @@ Tra cứu nguồn pháp luật chính thức và ưu tiên văn bản đang còn
 `;
 
     const promptText = `
-Người dùng hỏi về luật giao thông đường bộ Việt Nam:
+Người dùng hỏi về quy định và mức xử phạt giao thông đường bộ Việt Nam hiện hành:
 "${query}"
 
 Danh mục chủ đề: ${category || 'Tra cứu chung'}
 ${searchDirective}
 
-Hãy tự phân tích câu hỏi và đưa ra câu trả lời đúng trọng tâm, không chọn câu trả lời dựng sẵn theo từ khóa. Chỉ kết luận những gì có căn cứ từ kết quả tra cứu hoặc văn bản pháp luật đã biết rõ; nếu thiếu dữ kiện, hãy nói rõ cần bổ sung thông tin gì. Hãy cấu trúc câu trả lời gồm:
-1. **Kết luận nhanh**: Vi phạm hay không vi phạm, mức phạt tóm lược.
-2. **Căn cứ pháp lý chi tiết**: Trích dẫn cụ thể Điều, Khoản, Điểm văn bản luật (Nghị định 100/2019/NĐ-CP, Nghị định 123/2021/NĐ-CP hoặc Luật Trật tự an toàn giao thông đường bộ).
-3. **Mức phạt chi tiết theo loại phương tiện**:
-   - Đối với Ô tô: ...
-   - Đối với Xe máy: ...
-   - Đối với phương tiện khác (nếu có): ...
-4. **Xử phạt bổ sung & Tạm giữ**: Tước bằng lái xe bao lâu? Có tạm giữ xe không?
-5. **Nguồn tham chiếu chính thức**: Các link hoặc tài liệu từ moit.gov.vn, bocongan.gov.vn, chinhphu.vn.
-6. **Hướng dẫn thủ tục**: Cách nộp phạt điện tử qua Cổng Dịch vụ công Quốc gia hoặc quy trình xử lý biên bản.
+Hãy tra cứu web trước khi kết luận mức phạt. Ưu tiên văn bản gốc hoặc nguồn chính thức của Chính phủ; áp dụng Nghị định 168/2024/NĐ-CP cùng Nghị định 238/2026/NĐ-CP đang có hiệu lực tại thời điểm trả lời. Không dùng mức phạt cũ từ Nghị định 100/2019/NĐ-CP hoặc Nghị định 123/2021/NĐ-CP nếu chưa xác minh còn hiệu lực. Không tự suy diễn mức phạt từ mô tả gần giống; nếu chưa đủ loại phương tiện, mức vượt tốc độ, nồng độ hoặc tình tiết liên quan thì hỏi rõ hoặc nêu các trường hợp riêng.
+
+Hãy trả lời đúng trọng tâm theo cấu trúc:
+1. **Mức phạt dự kiến**: nêu số tiền cụ thể hoặc từng mức theo tình tiết; nếu nguồn không xác nhận thì nói rõ.
+2. **Loại phương tiện và hành vi**: ô tô, xe máy, xe đạp hoặc phương tiện liên quan.
+3. **Căn cứ pháp lý**: văn bản, Điều/Khoản/Điểm và quy định trừ điểm, tước GPLX hoặc hình thức bổ sung nếu có.
+4. **Nguồn chính thức**: dẫn link từ văn bản Chính phủ hoặc cơ quan nhà nước; không bịa link hoặc nguồn.
+5. **Thông tin cần làm rõ**: nêu những tình tiết còn thiếu nếu chưa thể xác định một mức duy nhất.
 `;
 
     let answer = '';
@@ -231,17 +442,35 @@ Hãy tự phân tích câu hỏi và đưa ra câu trả lời đúng trọng t�
         });
       }
 
-      const response = await withTimeout(
-        ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: promptText,
-          config: {
-            systemInstruction: SYSTEM_TRAFFIC_LEGAL,
-            tools: [{ googleSearch: {} }],
-          },
-        }),
-        25000
-      );
+      const legalModels = [
+        process.env.GEMINI_LEGAL_MODEL?.trim() || 'gemini-2.5-flash',
+        process.env.GEMINI_LEGAL_FALLBACK_MODEL?.trim() || 'gemini-3.8-flash',
+      ].filter((model, index, models) => model && models.indexOf(model) === index);
+      let response: Awaited<ReturnType<typeof ai.models.generateContent>> | undefined;
+      let lastGeminiError: unknown;
+
+      for (const [index, model] of legalModels.entries()) {
+        try {
+          response = await withTimeout(
+            ai.models.generateContent({
+              model,
+              contents: promptText,
+              config: {
+                systemInstruction: SYSTEM_TRAFFIC_LEGAL,
+                tools: [{ googleSearch: {} }],
+              },
+            }),
+            35000,
+          );
+          break;
+        } catch (error) {
+          lastGeminiError = error;
+          if (!isTransientGeminiError(error) || index === legalModels.length - 1) throw error;
+          console.warn(`Gemini model ${model} failed transiently; trying fallback model ${legalModels[index + 1]}.`);
+        }
+      }
+
+      if (!response) throw lastGeminiError || new Error('Gemini không trả về kết quả');
 
       const candidate = response.candidates?.[0];
       answer = response.text || '';
@@ -263,6 +492,14 @@ Hãy tự phân tích câu hỏi và đưa ra câu trả lời đúng trọng t�
         error: 'Gemini không thể tra cứu hoặc tổng hợp câu trả lời lúc này. Vui lòng thử lại sau.',
         detail: geminiError?.message,
       });
+    }
+
+    const userId = getSessionUserId(req);
+    if (userId && db) {
+      await db.execute(
+        'INSERT INTO lich_su_tu_van (user_id, question, answer, category) VALUES (?, ?, ?, ?)',
+        [userId, query, answer, category || null],
+      );
     }
 
     return res.json({

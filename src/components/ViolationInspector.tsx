@@ -13,6 +13,7 @@ import {
   Scale,
   Car,
   CheckCircle2,
+  Database,
 } from 'lucide-react';
 import { ViolationNoticeModal } from './ViolationNoticeModal';
 
@@ -39,6 +40,8 @@ export const ViolationInspector: React.FC<Props> = ({
 }) => {
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [customQuestion, setCustomQuestion] = useState('');
+  const [isSavingViolation, setIsSavingViolation] = useState(false);
+  const [saveViolationMessage, setSaveViolationMessage] = useState<string | null>(null);
 
   if (!entity) {
     return (
@@ -76,6 +79,32 @@ export const ViolationInspector: React.FC<Props> = ({
     if (!customQuestion.trim() || isLoadingAI) return;
     await onRunAIDetection(customQuestion);
     setCustomQuestion('');
+  };
+
+  const handleSaveViolation = async () => {
+    if (!entity.licensePlate || isSavingViolation) return;
+    setIsSavingViolation(true);
+    setSaveViolationMessage(null);
+    try {
+      const response = await fetch('/api/violations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          vehiclePlate: entity.licensePlate,
+          violationBehavior: violationTitle,
+          location: scenario.location,
+          status: 'pending',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Không thể lưu hồ sơ vi phạm');
+      setSaveViolationMessage('Đã lưu hồ sơ vi phạm vào cơ sở dữ liệu.');
+    } catch (err) {
+      setSaveViolationMessage(err instanceof Error ? err.message : 'Không thể lưu hồ sơ vi phạm');
+    } finally {
+      setIsSavingViolation(false);
+    }
   };
 
   return (
@@ -246,6 +275,21 @@ export const ViolationInspector: React.FC<Props> = ({
         <FileText className="w-4 h-4" />
         <span>Xuất Biên Bản Vi Phạm &amp; Bằng Chứng</span>
       </button>
+      {isViolation && (
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={handleSaveViolation}
+            disabled={!entity.licensePlate || isSavingViolation}
+            className="btn w-full py-3 text-xs font-bold border border-blue-300 text-blue-800 bg-blue-50 disabled:opacity-50"
+          >
+            <Database className="w-4 h-4" />
+            <span>{isSavingViolation ? 'Đang lưu...' : 'Lưu hồ sơ vào cơ sở dữ liệu'}</span>
+          </button>
+          {!entity.licensePlate && <p className="text-[11px] text-amber-700">Cần nhận diện biển số trước khi lưu hồ sơ.</p>}
+          {saveViolationMessage && <p role="status" className="text-[11px] text-slate-600">{saveViolationMessage}</p>}
+        </div>
+      )}
 
       {/* Ask AI Input */}
       <form onSubmit={handleAskQuestion} className="space-y-2 pt-3 border-t border-slate-300">
